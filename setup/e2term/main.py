@@ -3,6 +3,7 @@ import sctp
 import time
 import socket
 from ASN import helpers
+from db import database
 
 def send_logs_to_sctp(container_name, sctp_host, sctp_port):
     # Initialize Docker client
@@ -16,18 +17,17 @@ def send_logs_to_sctp(container_name, sctp_host, sctp_port):
 
     try:
         while True:
-            sock = sctp.sctpsocket_tcp(socket.AF_INET)
-            sock.connect((sctp_host, sctp_port))
+            # sock = sctp.sctpsocket_tcp(socket.AF_INET)
+            # sock.connect((sctp_host, sctp_port))
             # Get the latest logs from the container
             logs = container.logs(tail=5)  # Gets the last 10 lines; adjust as needed
-            encoded_msg = helpers.encode_asn1_message("E2Term", 1, str(logs), "", True)
+            encoded_msg, logs_message = helpers.encode_asn1_message("E2Term", 1, str(logs), "", True)
+            database.PushToSQL('localhost', 'signal_data', 'root', 'password', 'logs', [logs_message])
             # Send the logs to the SCTP host and port
-            print(encoded_msg)
-            sock.sctp_send(msg=encoded_msg)
-            print("Sleeping")
+            # sock.sctp_send(msg=encoded_msg)
             # # Wait for 2 seconds
             time.sleep(2)
-            sock.close()
+            # sock.close()
     except Exception as e:
         print("Stopping log forwarding...", str(e))
     # finally:

@@ -1,7 +1,47 @@
 import socket
 import json
+import time
 import numpy as np
 from db import sqlconn
+import datetime
+
+def simulate_network_traffic(kpi_profiles, num_ta, hours=24, interval=5, anomaly_factor=5):
+    """
+    Simulate network traffic and detect anomalies.
+    """
+    num_intervals = (hours * 60) // interval
+    anomaly_threshold = anomaly_factor  # Multiples of standard deviation
+    anomalies = []
+
+    for t in range(num_intervals):
+        for i in range(num_ta):
+            mu, sigma = kpi_profiles[i]
+            # Normal traffic pattern
+            observed_rsr = np.random.normal(mu[t], sigma[t])
+            # Introduce anomalies at random
+            if np.random.rand() < 0.1:  # 10% chance of anomaly
+                observed_rsr += anomaly_threshold * sigma[t] * np.random.uniform(1, 3)
+            # Compute anomaly score
+            anomaly_score = abs(observed_rsr - mu[t]) / sigma[t]
+            if anomaly_score > anomaly_threshold:
+                anomalies.append((t, i, observed_rsr, anomaly_score))
+    
+    return anomalies
+
+def detect_anomalies_remido(active_handhelds, threshold=3):
+    data = sqlconn.query_database(active_handhelds)
+    # print(data)
+    """Function to detect anomalies in the dataset based on the given threshold."""
+    anomalies = []
+    # print(data)
+    for record in data:
+        # print(record)
+        anomaly_score = (record['signals'] - record['ta_mean']) / record['ta_sd']
+        if abs(anomaly_score) > threshold:
+            print(anomaly_score)
+            print(record["inti"])
+            anomalies.append(record)
+    return anomalies
 
 def detect_anomalies(data):
     """
@@ -64,18 +104,50 @@ def start_server(host='0.0.0.0', port=9000, window_size=3):
                 else:
                     try:
                         input_data = input_data["metadata"]
-                        flattened_data = {k: v for d in input_data for k, v in d.items()}
-                        max_dev_series_id = series_with_max_deviation(flattened_data, window_size)
-                        response = f"Series with the maximum deviation: {max_dev_series_id}"
-                        print(response, flush=True)
+                        data = sqlconn.download_data()
+                        active_hh, signal_data = sqlconn.get_active_handhelds(data, "2024-04-17 10:50:00")
+                        flattened_data = {k: v for d in signal_data for k, v in d.items()}
+                        max_dev_series_id = detect_anomalies(flattened_data)
+                        print(max_dev_series_id, flush=True)
                     except json.JSONDecodeError:
                         response = "Error decoding JSON"
                         print(response, flush=True)
                     conn.sendall(response.encode())
 
 # Start the server
-data = sqlconn.download_data()
-active_hh, signal_data = sqlconn.get_active_handhelds(data, "2024-04-17 10:50:00")
-flattened_data = {k: v for d in signal_data for k, v in d.items()}
-max_dev_series_id = detect_anomalies(flattened_data)
-print(max_dev_series_id, flush=True)
+while True:
+    # try:
+    data = sqlconn.download_data()
+    last_timestamp, _, _ = data[-1]
+    active_hh, signal_data = sqlconn.get_active_handhelds(data, last_timestamp)
+    active_data = [{
+        "act_timestamp": last_timestamp,
+        "active_handhelds": len(active_hh)
+    }]
+    sqlconn.PushToSQL(active_data)
+    flattened_data = {k: v for d in signal_data for k, v in d.items()}
+    max_dev_series_id = detect_anomalies(flattened_data)
+    print("ANOMALY")
+    remido_results = detect_anomalies_remido(active_hh)
+    print(remido_results)
+    logs_message = {
+        "type": "XApp",
+        "log_time": datetime.datetime.now(),
+        "message": json.dumps({
+            "anomalous": max_dev_series_id,
+            "latest_timestamp": last_timestamp.isoformat()
+        }),
+        "origin": "XApp",
+        "dest": "e2term"
+    }
+    sqlconn.PushToSQLLogs('localhost', 'signal_data', 'root', 'password', 'logs', [logs_message])
+    print(max_dev_series_id, flush=True)
+    sqlconn.insert_data_into_anomaly_detection(max_dev_series_id)
+    time.sleep(2)
+    # except Exception as e:
+    #     print("Exception: {}".format(str(e)))
+    #     time.sleep(10)
+    #     continue
+    
+
+

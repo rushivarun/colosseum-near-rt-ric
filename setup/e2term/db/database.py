@@ -38,36 +38,3 @@ def PushToSQL(host, database, user, password, table_name, data):
 
         print("dbaas service updated. Pushed {} records to message bus".format(len(data)))
 
-
-def query_anomalous_data():
-    try:
-        # Assuming conn is your MySQL connection object
-        conn = mysql.connector.connect(
-            host='localhost',       # Typically 'localhost' or an IP address
-            user='root',   # Your MySQL username
-            password='password',  # Your MySQL password
-            database='signal_data'  # Your MySQL database name
-        )
-        
-        if conn.is_connected():
-            cursor = conn.cursor()
-            query = """
-            SELECT *
-            FROM anomaly_detection
-            WHERE anomalous = 1 AND action_taken = 0;
-            """
-            cursor.execute(query)
-            results = cursor.fetchall()
-            anomalies = []
-            # Process results
-            for row, _, _ in results:
-                anomalies.append(row)
-            
-            return anomalies
-    except Exception as e:
-        print("Error while connecting to SCTP", e)
-    finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
-            print("SCTP connection is closed")

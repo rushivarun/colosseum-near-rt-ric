@@ -2,6 +2,7 @@ from pyasn1.codec.der import decoder
 from pyasn1.codec.der import encoder
 from pyasn1.type.namedtype import NamedType, NamedTypes
 from pyasn1.type.univ import Integer, Sequence, SequenceOf, Boolean, BitString, OctetString
+import datetime
 
 class Message(Sequence):
     componentType = NamedTypes(
@@ -13,13 +14,20 @@ class Message(Sequence):
     )
 
 def encode_asn1_message(sender, criticality, messages, signals, active):
+    logs_message = {
+        "type": "E2term",
+        "log_time": datetime.datetime.now(),
+        "message": messages,
+        "origin": "E2term",
+        "dest": "Near RT RIC"
+    }
     message = Message()
     message.setComponentByName('sender', sender)
     message.setComponentByName('messages', messages)
     message.setComponentByName('criticality', criticality)
     message.setComponentByName('signals', signals)
     message.setComponentByName('active', active)
-    return encoder.encode(message)
+    return encoder.encode(message), logs_message
 
 def decode_asn1_message(data):
     decoded_message, _ = decoder.decode(data, asn1Spec=Message())
